@@ -15,13 +15,16 @@ from selenium.webdriver.chrome.options import Options
 import csv
 import requests
 import typing
-
+import tempfile
+import shutil
 from openpyxl import Workbook  # type: ignore
 # --------------------------- Setup & Utilities ---------------------------
 
 def setup_chrome_driver():
     """Setup Chrome driver with options and Jakarta geolocation."""
     chrome_options = Options()
+    temp_data = tempfile.mkdtemp()
+    chrome_options.add_argument(f"--user-data-dir={temp_data}")
     chrome_options.add_argument("--headless")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
@@ -391,6 +394,7 @@ def ai_overview_detector(all_keywords):
 
         finally:
             driver.quit()
+	shutil.rmtree(temp_data, ignore_errors=True)
 
         # Merge current batch into results
         results.extend(batch_results)
