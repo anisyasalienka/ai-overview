@@ -1,19 +1,99 @@
-# def ai_overview_detector(keywords):
-#     print(keywords)
-#     return keywords
-
 # scraper.py
 
 import pickle
+import random
+import time
+
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, ElementNotInteractableException
+from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.chrome.options import Options
 
+# --------------------------- Setup & Utilities ---------------------------
+
+def setup_chrome_driver():
+    """Setup Chrome driver with options and Jakarta geolocation."""
+    chrome_options = Options()
+    chrome_options.add_argument("--headless")
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_argument("--disable-gpu")
+    chrome_options.add_argument("--window-size=1920,1080")
+    chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+    chrome_options.add_argument("--disable-notifications")
+    chrome_options.add_argument(
+        "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    )
+    chrome_options.add_argument("--remote-debugging-port=9222")
+
+    driver = webdriver.Chrome(options=chrome_options)
+
+    # Set Jakarta geolocation
+    driver.execute_cdp_cmd('Emulation.setGeolocationOverride', {
+        'latitude': -6.2088,
+        'longitude': 106.8456,
+        'accuracy': 100
+    })
+
+    return driver
+
+def save_cookies_to_pickle(cookies, filename="cookies.pkl"):
+    """Save cookies to a pickle file."""
+    with open(filename, "wb") as f:
+        pickle.dump(cookies, f)
+    print(f"Cookies saved to {filename}")
+
+def load_cookies_from_pickle(driver, filename="cookies.pkl"):
+    """Load cookies from a pickle file into the driver."""
+    try:
+        with open(filename, "rb") as f:
+            cookies = pickle.load(f)
+            for cookie in cookies:
+                driver.add_cookie({"name": cookie["name"], "value": cookie["value"]})
+        print("Cookies loaded successfully.")
+    except Exception as e:
+        print(f"Could not load cookies: {e}")
+
+# --------------------------- Bot Detection ---------------------------
+
+class BotDetector:
+    """
+    Handles bot detection during scraping.
+    """
+    BOT_DETECTION_XPATH = "/html/body/div[1]/div/br[2]"  # Example: replace with actual element Google shows on captcha page
+
+    @staticmethod
+    def check_bot_detection(driver, timeout=5):
+        """
+        Check if bot detection is triggered.
+
+        Args:
+            driver: Selenium WebDriver instance
+            timeout: seconds to wait
+
+        Returns:
+            bool: True if detected, False otherwise
+        """
+        try:
+            time.sleep(random.uniform(1, 2))
+            WebDriverWait(driver, timeout).until(
+                EC.presence_of_element_located((By.XPATH, BotDetector.BOT_DETECTION_XPATH))
+            )
+            print("⚠️ Bot detection triggered!")
+            return True
+        except TimeoutException:
+            return False
+        except Exception as e:
+            print(f"Error checking bot detection: {str(e)}")
+            return True
+
+# --------------------------- Google Login ---------------------------
+
 def google_login(email, password):
+    """Login to Google account and return driver & cookies."""
     driver = setup_chrome_driver()
     wait = WebDriverWait(driver, 20)
 
@@ -32,28 +112,19 @@ def google_login(email, password):
         password_field.send_keys(password)
         password_field.send_keys(Keys.RETURN)
 
-        # ✅ Improved: wait for Google account avatar or account icon instead of hardcoded ID
+        # Wait for login completion
         try:
-            wait.until(
-                EC.presence_of_element_located((By.XPATH, '//*[@id="identifierId"]')) 
-            )
-            print("Login successful!")
-
-            # Print current page title
-            print("Current page title:", driver.title)
-
-            # Get cookies
+            wait.until(EC.presence_of_element_located((By.XPATH, '//*[@id="identifierId"]')))
+            print("✅ Login successful!")
+            print("Page title:", driver.title)
             cookies = driver.get_cookies()
             print("Cookies:", cookies)
-
             return driver, cookies
-
         except TimeoutException:
             print("Login may have failed or verification element not found.")
             print("Page title:", driver.title)
-            print("Current URL:", driver.current_url)
-            # Optional: print HTML for debugging
-            print(driver.page_source[:1000])  # print first 1000 chars
+            print("URL:", driver.current_url)
+            print(driver.page_source[:1000])  # First 1000 chars for debugging
             return None, None
 
     except Exception as e:
@@ -61,14 +132,182 @@ def google_login(email, password):
         driver.quit()
         return None, None
 
-def save_cookies_to_pickle(cookies, filename="cookies.pkl"):
-    with open(filename, "wb") as f:
-        pickle.dump(cookies, f)
-    print(f"Cookies saved to {filename}")
+# --------------------------- AI Overview Detector ---------------------------
+
+# def ai_overview_detector(keywords):
+#     """
+#     Search keywords on Google, detect AI overview & bot detection.
+#     Returns list of results.
+#     """
+#     results = []
+#     driver = setup_chrome_driver()
+#     wait = WebDriverWait(driver, 10)
+
+#     try:
+#         driver.get("https://www.google.com")
+#         driver.delete_all_cookies()
+#         load_cookies_from_pickle(driver)
+#         driver.get("https://www.google.com")
+#         time.sleep(2 + random.random())
+
+#         for keyword in keywords:
+#             try:
+#                 search_box = wait.until(EC.element_to_be_clickable((By.NAME, "q")))
+#                 search_box.clear()
+#                 search_box.send_keys(keyword)
+#                 search_box.send_keys(Keys.RETURN)
+#                 time.sleep(2 + random.random())
+
+#                 # Bot detection check
+#                 if BotDetector.check_bot_detection(driver):
+#                     print(f"⚠️ Google flagged as bot when searching '{keyword}'. Skipping.")
+#                     results.append({
+#                         "keyword": keyword,
+#                         "detected": False,
+#                         "text": None,
+#                         "bot_detected": True
+#                     })
+#                     continue
+
+#                 # Try find AI overview
+#                 try:
+#                     element = driver.find_element(By.ID, "m-x-content")
+#                     detected_text = element.text
+#                     print(f"✅ AI overview detected for '{keyword}': {detected_text[:100]}...")
+#                     results.append({
+#                         "keyword": keyword,
+#                         "detected": True,
+#                         "text": detected_text,
+#                         "bot_detected": False
+#                     })
+#                 except Exception:
+#                     print(f"❌ No AI overview for '{keyword}'")
+#                     results.append({
+#                         "keyword": keyword,
+#                         "detected": False,
+#                         "text": None,
+#                         "bot_detected": False
+#                     })
+
+#                 # Go back before next search
+#                 driver.get("https://www.google.com")
+#                 time.sleep(1 + random.random())
+
+#             except Exception as e:
+#                 print(f"⚠️ Error searching '{keyword}': {e}")
+#                 results.append({
+#                     "keyword": keyword,
+#                     "detected": False,
+#                     "text": None,
+#                     "bot_detected": False
+#                 })
+
+#     finally:
+#         driver.quit()
+
+#     return results
+
+def ai_overview_detector(all_keywords):
+    """
+    Detect AI Overview for list of keywords, split into random batches.
+    """
+    def split_keywords_random_batches(keywords, min_size=3, max_size=8):
+        random.shuffle(keywords)
+        batches = []
+        cursor = 0
+        while cursor < len(keywords):
+            batch_size = random.randint(min_size, max_size)
+            batch = keywords[cursor:cursor + batch_size]
+            batches.append(batch)
+            cursor += batch_size
+        return batches
+
+    batches = split_keywords_random_batches(all_keywords)
+    print(f"🔍 Total keywords: {len(all_keywords)}, running in {len(batches)} batches...")
+
+    results = []
+
+    for idx, batch in enumerate(batches):
+        print(f"\n🚀 Batch {idx+1}: {len(batch)} keywords")
+
+        driver = setup_chrome_driver()
+        wait = WebDriverWait(driver, 10)
+        batch_results = []
+
+        try:
+            driver.get("https://www.google.com")
+            driver.delete_all_cookies()
+            load_cookies_from_pickle(driver)
+            driver.get("https://www.google.com")
+            time.sleep(2 + random.random())
+
+            for keyword in batch:
+                try:
+                    search_box = wait.until(EC.element_to_be_clickable((By.NAME, "q")))
+                    search_box.clear()
+                    search_box.send_keys(keyword)
+                    search_box.send_keys(Keys.RETURN)
+                    time.sleep(2 + random.random())
+
+                    if BotDetector.check_bot_detection(driver):
+                        print(f"⚠️ Bot detected for '{keyword}'")
+                        batch_results.append({
+                            "keyword": keyword,
+                            "detected": False,
+                            "text": None,
+                            "bot_detected": True
+                        })
+                        continue
+
+                    try:
+                        element = driver.find_element(By.ID, "m-x-content")
+                        detected_text = element.text
+                        print(f"✅ AI Overview for '{keyword}': {detected_text[:100]}...")
+                        batch_results.append({
+                            "keyword": keyword,
+                            "detected": True,
+                            "text": detected_text,
+                            "bot_detected": False
+                        })
+                    except Exception:
+                        print(f"❌ No AI Overview for '{keyword}'")
+                        batch_results.append({
+                            "keyword": keyword,
+                            "detected": False,
+                            "text": None,
+                            "bot_detected": False
+                        })
+
+                    driver.get("https://www.google.com")
+                    time.sleep(1 + random.random())
+
+                except Exception as e:
+                    print(f"⚠️ Error on '{keyword}': {e}")
+                    batch_results.append({
+                        "keyword": keyword,
+                        "detected": False,
+                        "text": None,
+                        "bot_detected": False
+                    })
+
+        finally:
+            driver.quit()
+
+        results.extend(batch_results)
+
+        if idx < len(batches)-1:
+            wait_time = random.uniform(10, 20)
+            print(f"✅ Finished batch {idx+1}, waiting {wait_time:.1f}s before next batch...")
+            time.sleep(wait_time)
+
+    return results
+
+
+# --------------------------- Main ---------------------------
 
 def main():
-    email = "boxyummie@gmail.com"
-    password = "yummie123"
+    email = "your_email@gmail.com"   # replace
+    password = "your_password"       # replace
 
     driver, cookies = google_login(email, password)
 
@@ -78,112 +317,16 @@ def main():
         finally:
             driver.quit()
     else:
-        print("Login failed. Please check credentials or check browser output above.")
+        print("Login failed.")
 
-import pickle
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.chrome.options import Options
-import time
-import random
+    # Example run:
+    keywords = ["openai", "machine learning", "deep learning"]
+    results = ai_overview_detector(keywords)
+    print("\n=== Results ===")
+    for r in results:
+        print(r)
 
-def setup_chrome_driver():
-    chrome_options = Options()
-    chrome_options.add_argument("--headless")
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-    chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--window-size=1920,1080")
-    chrome_options.add_argument("--disable-blink-features=AutomationControlled")
-    chrome_options.add_argument('--disable-notifications')
-    chrome_options.add_argument(
-        'user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
-    chrome_options.add_argument("--remote-debugging-port=9222")
+# --------------------------- Entry Point ---------------------------
 
-    driver = webdriver.Chrome(options=chrome_options)
-
-    # Set Jakarta geolocation
-    driver.execute_cdp_cmd('Emulation.setGeolocationOverride', {
-        'latitude': -6.2088,
-        'longitude': 106.8456,
-        'accuracy': 100
-    })
-
-    return driver
-
-def load_cookies_from_pickle(driver, filename="cookies.pkl"):
-    try:
-        with open(filename, "rb") as f:
-            cookies = pickle.load(f)
-            for cookie in cookies:
-                driver.add_cookie({"name": cookie["name"], "value": cookie["value"]})
-        print("Cookies loaded successfully.")
-    except Exception as e:
-        print(f"Could not load cookies: {e}")
-
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-import time
-import random
-
-def ai_overview_detector(keywords):
-    results = []
-    driver = setup_chrome_driver()
-    wait = WebDriverWait(driver, 10)
-
-    try:
-        # Start by loading Google and cookies
-        driver.get("https://www.google.com")
-        driver.delete_all_cookies()
-        load_cookies_from_pickle(driver)
-        driver.get("https://www.google.com")
-        time.sleep(2 + random.random())
-
-        for keyword in keywords:
-            try:
-                # Wait for and fill the search box
-                search_box = wait.until(EC.element_to_be_clickable((By.NAME, "q")))
-                search_box.clear()
-                search_box.send_keys(keyword)
-                search_box.send_keys(Keys.RETURN)
-                time.sleep(2 + random.random())
-
-                try:
-                    # Try to find AI Overview
-                    element = driver.find_element(By.ID, "m-x-content")
-                    detected_text = element.text
-                    print(f"✅ AI overview detected for '{keyword}': {detected_text[:100]}...")
-                    results.append({
-                        "keyword": keyword,
-                        "detected": True,
-                        "text": detected_text
-                    })
-                except Exception:
-                    print(f"❌ No AI overview found for '{keyword}'")
-                    results.append({
-                        "keyword": keyword,
-                        "detected": False,
-                        "text": None
-                    })
-                    print(driver.page_source)
-
-                # Go back to Google home page before next search
-                driver.get("https://www.google.com")
-                time.sleep(1 + random.random())
-
-            except Exception as e:
-                print(f"⚠️ Error searching '{keyword}': {e}")
-                results.append({
-                    "keyword": keyword,
-                    "detected": False,
-                    "text": None
-                })
-
-    finally:
-        driver.quit()
-
-    return results
+if __name__ == "__main__":
+    main()

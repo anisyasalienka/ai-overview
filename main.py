@@ -34,11 +34,13 @@ async def read_root():
 @app.post("/detect")
 async def detect(request: KeywordsRequest):
     results = ai_overview_detector(request.keywords)
-    # return {
-    #     "detected": result["detected"],
-    #     "result": result["text"]
-    # }
-    simplified = [{"keyword": r["keyword"], "detected": r["detected"]} for r in results]
+    simplified = [
+        {
+            "keyword": r["keyword"],
+            "detected": r["detected"],
+            "bot_detected": r.get("bot_detected", False)
+        }
+        for r in results
+    ]
     return {"results": simplified}
-    
 
