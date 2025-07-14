@@ -394,7 +394,7 @@ def ai_overview_detector(all_keywords):
 
         finally:
             driver.quit()
-	shutil.rmtree(temp_data, ignore_errors=True)
+	        shutil.rmtree(temp_data, ignore_errors=True)
 
         # Merge current batch into results
         results.extend(batch_results)
@@ -483,4 +483,3 @@ def save_results_in_chunks(results, chunk_size=100):
         filename = f"ai_overview_results_part{i//chunk_size + 1}.xlsx"
         save_results_to_excel(chunk, filename)
         print(f"✅ Saved {len(chunk)} results to {filename}")
-
