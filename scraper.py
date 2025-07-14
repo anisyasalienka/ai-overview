@@ -393,7 +393,7 @@ def ai_overview_detector(all_keywords):
                     })
 
         finally:
-            driver.quit()
+            	driver.quit()
 	        shutil.rmtree(temp_data, ignore_errors=True)
 
         # Merge current batch into results
